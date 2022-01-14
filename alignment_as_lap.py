@@ -272,10 +272,10 @@ if __name__ == '__main__':
     T_A_filename = 'data/sub-500222/dt-neuro-track-trk.tag-ensemble.tag-t1.id-605a1e1c73b69eaef86d2f54/track.trk'
     T_B_filename = 'data/sub-506234/dt-neuro-track-trk.tag-ensemble.tag-t1.id-605a1ee373b69e81bf6d34f9/track.trk'
 
-    distance_function = bundles_distances_mdf
+    distance_function = bundles_distances_mam  # bundles_distances_mdf is faster
     
     # Main parameters:
-    k = 1000  # number of clusters, usually somewhat above sqrt(|T_A|) is optimal for efficiency.
+    k = 5000  # number of clusters, usually somewhat above sqrt(|T_A|) is optimal for efficiency.
     threshold_short_streamlines = 0.0  # Beware: discarding streamlines affects IDs
 
     # Additional internal parameters for mini-batch k-means, no need to change them, usually:
