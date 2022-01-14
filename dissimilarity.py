@@ -4,6 +4,9 @@ function. Some prototype selection algorithms are available.
 
 See Olivetti E., Nguyen T.B., Garyfallidis, E., The Approximation of
 the Dissimilarity Projection, http://dx.doi.org/10.1109/PRNI.2012.13
+
+Copyright Emanuele Olivetti, 2018, 2020, 2022
+BSD License, 3 clauses.
 """
 
 from __future__ import division

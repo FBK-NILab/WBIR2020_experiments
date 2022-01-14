@@ -1,3 +1,9 @@
+"""Mini-batch k-means
+
+Copyright Emanuele Olivetti, 2018, 2020, 2022
+BSD License, 3 clauses.
+"""
+
 import numpy as np
 from scipy.spatial import KDTree
 
