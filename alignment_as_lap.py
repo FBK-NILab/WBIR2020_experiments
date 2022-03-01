@@ -14,6 +14,9 @@ from dipy.tracking.streamline import set_number_of_points
 from dipy.tracking.distances import bundles_distances_mam, bundles_distances_mdf
 from dipy.tracking.streamlinespeed import length
 from scipy.optimize import linear_sum_assignment
+# from scipy.spatial.distance import cdist
+from scipy.sparse.csgraph import min_weight_full_bipartite_matching  # this is the sparse equivalent to linear_sum_assignment
+from scipy.sparse import csc_matrix
 
 
 try:
@@ -47,15 +50,45 @@ def load_tractogram(T_filename, threshold_short_streamlines=10.0, nb_points=16):
     return T
 
 
-def clustering(S_dr, k, b=100, t=100):
+def clustering(S_dr, k, b=100, t=100, S_centers=None):
     """Wrapper of the mini-batch k-means algorithm that combines multiple
     basic functions into a convenient one.
     """
-    # Generate k random centers:
-    S_centers = S_dr[np.random.permutation(S_dr.shape[0])[:k]]
-
-    # Improve the k centers with mini_batch_kmeans
-    S_centers = mini_batch_kmeans(S_dr, S_centers, b=b, t=t)
+    if S_centers is None:
+        # Generate k random centers:
+        S_centers = S_dr[np.random.permutation(S_dr.shape[0])[:k]]
+        # Improve the k centers with mini_batch_kmeans
+        S_centers = mini_batch_kmeans(S_dr, S_centers, b=b, t=t)
+    else:
+        # First implementation:
+        #
+        # print("Findind the new centers as the closest to the given ones")
+        # kdt = KDTree(S_dr)
+        # _, S_centers_idx = kdt.query(S_centers, k=1, workers=-1)
+        # assert(np.unique(S_centers_idx).size == S_centers_idx.size) # assert that there are no duplicate centers ## WARNING!!! THIS SOMETIMES FAILS!!!
+        # S_centers = S_dr[S_centers_idx]
+        #
+        # Second implementation:
+        #
+        # First attempt of the second implementation:
+        # print("Using LAP to find the new new centers as the closest to the given ones")
+        # dm_S_centers_S_dr = cdist(S_centers, S_dr) # THIS REQUIRES TOO MUCH MEMORY!!
+        # _, S_centers_idx = linear_sum_assignment(dm_S_centers_S_dr)
+        # S_centers = S_dr[S_centers_idx]
+        #
+        # Second attempt of the second implementation:
+        print("Using sparse LAP to find the new new centers as the closest to the given ones")
+        print("Computing the closest candidates to S_centers, for the sparse LAP")
+        kdt = KDTree(S_dr)
+        k = 50
+        data, col = kdt.query(S_centers, k=k, workers=-1)  # what is a value for k which is usually good?
+        data = data + 1.0e-10  # this prevents problems when there are perfect matches with zero distance that are considered missing values by the sparse LAP!
+        print("Creating a sparse distance matrix with the result")
+        row = np.repeat(np.arange(len(S_centers), dtype=int), k)
+        dm_S_centers_S_dr_sparse = csc_matrix((data.flatten(), (row, col.flatten())), shape=(len(S_centers), len(S_dr)))
+        print("Solving the sparse LAP")
+        _, S_centers_idx = min_weight_full_bipartite_matching(dm_S_centers_S_dr_sparse)
+        S_centers = S_dr[S_centers_idx]
 
     # Assign the cluster labels to each streamline. The label is the
     # index of the nearest center.
@@ -220,7 +253,9 @@ def alignment_as_LAP(T_A, T_B,
 
     if T_B_dr is None:
         print("Computing the dissimilarity representation of T_B")
-        T_B_dr, prototypes_B = compute_dissimilarity(T_B, distance=distance_function)
+        # T_B_dr, prototypes_B = compute_dissimilarity(T_B, distance=distance_function)
+        print("Using prototypes of T_A")
+        T_B_dr = dissimilarity(T_B, T_A[prototypes_A], distance=distance_function)
 
     # 3) Compute the k-means clustering of T_A and T_B
     b = 100  # mini-batch size
@@ -229,7 +264,11 @@ def alignment_as_LAP(T_A, T_B,
     print("mini-batch k-means on T_A")
     T_A_representatives_idx, T_A_cluster_labels = clustering(T_A_dr, k=k, b=b, t=t)
     print("mini-batch k-means on T_B")
-    T_B_representatives_idx, T_B_cluster_labels = clustering(T_B_dr, k=k, b=b, t=t)
+    print("...using T_A_representatives")
+    T_B_representatives_idx, T_B_cluster_labels = clustering(T_B_dr, k=k, b=b, t=t, S_centers=T_A_dr[T_A_representatives_idx])
+    tmp = np.unique(T_B_cluster_labels).size
+    print("How many clustes were formed? %s" % (tmp,))
+    assert(tmp == k) # check that all clusters were formed
 
     # 4) Compute LAP between T_A_representatives and T_B_representatives
     alpha = 0.5
@@ -271,6 +310,7 @@ if __name__ == '__main__':
 
     T_A_filename = 'data/sub-500222/dt-neuro-track-trk.tag-ensemble.tag-t1.id-605a1e1c73b69eaef86d2f54/track.trk'
     T_B_filename = 'data/sub-506234/dt-neuro-track-trk.tag-ensemble.tag-t1.id-605a1ee373b69e81bf6d34f9/track.trk'
+    # T_B_filename = T_A_filename
 
     distance_function = bundles_distances_mam  # bundles_distances_mdf is faster
     
@@ -283,7 +323,7 @@ if __name__ == '__main__':
     t = 100
 
     # Number of points to which resample each streamline, for performance reasons:
-    nb_points = 32
+    nb_points = 16
 
     # 1) load T_A and T_B
     T_moving = load_tractogram(T_A_filename,
